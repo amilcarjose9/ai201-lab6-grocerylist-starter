@@ -48,6 +48,45 @@ def create_list(name: str, created_by: str, is_shared: bool = False) -> GroceryL
     return grocery_list
 
 
+def get_list_stats(list_id: str) -> dict:
+    """
+    Return statistics for a grocery list.
+    
+    Args:
+        list_id: ID of the grocery list.
+        
+    Returns:
+        A dictionary containing total items, purchased count, remaining count,
+        and a category breakdown of the remaining items.
+        
+    Raises:
+        ValueError: If the list does not exist.
+    """
+    # Fix: Verify the list exists before computing stats (PR #2, Issue 2)
+    grocery_list = db.session.get(GroceryList, list_id)
+    if not grocery_list:
+        raise ValueError(f"List {list_id!r} not found")
+
+    items = Item.query.filter_by(list_id=list_id).all()
+    
+    total_items = len(items)
+    purchased_items = [item for item in items if item.is_purchased]
+    remaining_items = [item for item in items if not item.is_purchased]
+    
+    # Fix: Build by_category using only remaining items (PR #2, Issue 1)
+    by_category = {}
+    for item in remaining_items:
+        cat = item.category or "uncategorized"
+        by_category[cat] = by_category.get(cat, 0) + 1
+        
+    return {
+        "total_items": total_items,
+        "purchased": len(purchased_items),
+        "remaining": len(remaining_items),
+        "by_category": by_category
+    }
+
+
 # ---------------------------------------------------------------------------
 # Item operations
 # ---------------------------------------------------------------------------
@@ -150,3 +189,37 @@ def mark_purchased(list_id: str, item_id: str, user_id: str) -> Item:
     item.purchased_at = datetime.now(timezone.utc)
     db.session.commit()
     return item
+
+
+def purchase_all_items(list_id: str, user_id: str) -> int:
+    """
+    Mark all unpurchased items in a list as purchased.
+    
+    Args:
+        list_id: ID of the grocery list.
+        user_id: ID of the user marking them purchased.
+        
+    Returns:
+        The number of newly purchased items.
+        
+    Raises:
+        ValueError: If the list does not exist.
+    """
+    # Fix: Explicitly check for list existence
+    grocery_list = db.session.get(GroceryList, list_id)
+    if not grocery_list:
+        raise ValueError(f"List {list_id!r} not found")
+
+    # Fix: Query only unpurchased items so we don't overwrite history (PR #1, Issue 1)
+    unpurchased_items = Item.query.filter_by(list_id=list_id, is_purchased=False).all()
+    
+    now = datetime.now(timezone.utc)
+    for item in unpurchased_items:
+        item.is_purchased = True
+        item.purchased_by = user_id
+        item.purchased_at = now
+        
+    db.session.commit()
+    
+    # Fix: Return the delta length instead of total items (PR #1, Issue 2)
+    return len(unpurchased_items)

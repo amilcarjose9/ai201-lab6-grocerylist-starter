@@ -47,6 +47,44 @@ def create_list():
         return jsonify({"error": str(e)}), 404
 
 
+@lists_bp.route("/<list_id>/stats", methods=["GET"])
+def list_stats(list_id):
+    """
+    Return statistics for a specific grocery list.
+    """
+    try:
+        stats = list_service.get_list_stats(list_id)
+        return jsonify(stats), 200
+    except ValueError as e:
+        # Returns 404 cleanly now since the service raises ValueError on bad list_id
+        return jsonify({"error": str(e)}), 404
+
+
+@lists_bp.route("/<list_id>/purchase-all", methods=["POST"])
+def purchase_all(list_id):
+    """
+    Bulk-mark all unpurchased items in a list as purchased.
+    
+    Expected JSON body:
+        user_id (str, required) — the user marking the items purchased
+    """
+    data = request.get_json() or {}
+    user_id = data.get("user_id")
+    
+    # Fix: Validate user_id exists before calling the service layer (PR #1, Issue 3)
+    if not user_id:
+        return jsonify({"error": "Missing required field: user_id"}), 400
+        
+    try:
+        purchased_count = list_service.purchase_all_items(
+            list_id=list_id, 
+            user_id=user_id
+        )
+        return jsonify({"purchased": purchased_count}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
 # ---------------------------------------------------------------------------
 # Item routes (nested under a list)
 # ---------------------------------------------------------------------------
